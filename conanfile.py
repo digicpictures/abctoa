@@ -26,3 +26,4 @@ class AbctoaConan(ConanFile):
 
     def requirements(self):
          self.requires("Maya/{}@digic/stable".format(self.options.maya_version))
+         self.requires("dViewportHelpers/{}@digic/stable".format(self.options.maya_version))

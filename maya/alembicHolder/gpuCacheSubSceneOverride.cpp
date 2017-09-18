@@ -20,6 +20,8 @@
 #include "IXformDrw.h"
 #include "IPolyMeshDrw.h"
 
+#include <dViewportHelpers.h>
+
 #include <cstring>
 #include <chrono>
 #include <unordered_set>
@@ -444,6 +446,8 @@ public:
         const boost::shared_ptr<const IndexBuffer>&  indices,
         const boost::shared_ptr<const VertexBuffer>& positions,
         const boost::shared_ptr<const VertexBuffer>& normals,
+        const boost::shared_ptr<const VertexBuffer>& tangents,
+        const boost::shared_ptr<const VertexBuffer>& bitangents,
         const boost::shared_ptr<const VertexBuffer>& uvs,
         const MBoundingBox&                          boundingBox
     )
@@ -463,6 +467,12 @@ public:
             if (uvs) {
                 acquireVertexBuffer(uvs);
             }
+            if (tangents) {
+                acquireVertexBuffer(tangents);
+            }
+            if (bitangents) {
+                acquireVertexBuffer(bitangents);
+            }
             return;
         }
 
@@ -470,6 +480,8 @@ public:
         static const MString sPositions("positions");
         static const MString sNormals("normals");
         static const MString sUVs("uvs");
+        static const MString sTangents("tangents");
+        static const MString sBitangents("bitangents");
 
         MVertexBufferArray buffers;
         buffers.addBuffer(sPositions, acquireVertexBuffer(positions));
@@ -478,6 +490,12 @@ public:
         }
         if (uvs) {
             buffers.addBuffer(sUVs, acquireVertexBuffer(uvs));
+        }
+        if (tangents) {
+            buffers.addBuffer(sTangents, acquireVertexBuffer(tangents));
+        }
+        if (bitangents) {
+            buffers.addBuffer(sBitangents, acquireVertexBuffer(bitangents));
         }
 
         // It the geometry does not require an index buffer, then use an empty one.
@@ -495,7 +513,9 @@ public:
         const boost::shared_ptr<const IndexBuffer>&  indices,
         const boost::shared_ptr<const VertexBuffer>& positions,
         const boost::shared_ptr<const VertexBuffer>& normals = boost::shared_ptr<const VertexBuffer>(),
-        const boost::shared_ptr<const VertexBuffer>& uvs     = boost::shared_ptr<const VertexBuffer>()
+        const boost::shared_ptr<const VertexBuffer>& uvs     = boost::shared_ptr<const VertexBuffer>(),
+        const boost::shared_ptr<const VertexBuffer>& tangents   = boost::shared_ptr<const VertexBuffer>(),
+        const boost::shared_ptr<const VertexBuffer>& bitangents = boost::shared_ptr<const VertexBuffer>()
     )
     {
         if (indices) {
@@ -513,6 +533,14 @@ public:
         if (uvs) {
             removeBufferFromCache(uvs);
         }
+
+        if (tangents) {
+            removeBufferFromCache(tangents);
+        }
+
+        if (bitangents) {
+            removeBufferFromCache(bitangents);
+        }
     }
 
     // Shorthand method to do removeBuffers() and setBuffers()
@@ -523,15 +551,19 @@ public:
         const boost::shared_ptr<const VertexBuffer>& positions,
         const boost::shared_ptr<const VertexBuffer>& normals,
         const boost::shared_ptr<const VertexBuffer>& uvs,
+        const boost::shared_ptr<const VertexBuffer>& tangents,
+        const boost::shared_ptr<const VertexBuffer>& bitangents,
         const MBoundingBox&                          boundingBox,
         const boost::shared_ptr<const IndexBuffer>&  prevIndices,
         const boost::shared_ptr<const VertexBuffer>& prevPositions,
         const boost::shared_ptr<const VertexBuffer>& prevNormals = boost::shared_ptr<const VertexBuffer>(),
-        const boost::shared_ptr<const VertexBuffer>& prevUVs     = boost::shared_ptr<const VertexBuffer>()
+        const boost::shared_ptr<const VertexBuffer>& prevUVs     = boost::shared_ptr<const VertexBuffer>(),
+        const boost::shared_ptr<const VertexBuffer>& prevTangents = boost::shared_ptr<const VertexBuffer>(),
+        const boost::shared_ptr<const VertexBuffer>& prevBitangents = boost::shared_ptr<const VertexBuffer>()
     )
     {
-        removeBuffers(prevIndices, prevPositions, prevNormals, prevUVs);
-        setBuffers(subSceneOverride, renderItem, indices, positions, normals, uvs, boundingBox);
+        removeBuffers(prevIndices, prevPositions, prevNormals, prevUVs, prevTangents, prevBitangents);
+        setBuffers(subSceneOverride, renderItem, indices, positions, normals, uvs, tangents, bitangents, boundingBox);
     }
 
     // Find the Viewport 2.0 index buffer in the cache. Returns NULL if not found.
@@ -2505,7 +2537,9 @@ public:
             fIndices,
             fPositions,
             fNormals,
-            fUVs
+            fUVs,
+            fTangents,
+            fBitangents
         );
 
         // Notify that the render item is destroyed or already destroyed.
@@ -2573,13 +2607,37 @@ public:
                     const boost::shared_ptr<const VertexBuffer>&    positions,
                     const boost::shared_ptr<const VertexBuffer>&    normals,
                     const boost::shared_ptr<const VertexBuffer>&    uvs,
-                    const MBoundingBox&                             boundingBox)
+                    const MBoundingBox&                             boundingBox,
+                    const bool                                      compute_tangent_basis = false)
     {
-        const bool buffersChanged =
+        bool buffersChanged =
             fIndices    !=  indices     ||
             fPositions  !=  positions   ||
             fNormals    !=  normals     ||
             fUVs        !=  uvs;
+
+        boost::shared_ptr<const VertexBuffer> tangents;
+        boost::shared_ptr<const VertexBuffer> bitangents;
+
+        // Compute tangent and bitangent vectors if requested.
+        if (uvs && compute_tangent_basis) {
+            const auto create_float_array = [](size_t length) {
+                return SharedArray<float>::create(boost::shared_array<float>(new float[length]), length);
+            };
+            const auto num_vertices = positions->numVerts();
+            auto tangent_array = boost::shared_array<float>(new float[3 * num_vertices]);
+            auto bitangent_array = boost::shared_array<float>(new float[3 * num_vertices]);
+
+            const size_t num_triangles = indices->numIndices() / 3;
+            dViewportHelpers::computeTangentBasis(num_vertices, num_triangles,
+                indices->array()->getReadable()->get(), positions->array()->getReadable()->get(),
+                normals->array()->getReadable()->get(), uvs->array()->getReadable()->get(),
+                tangent_array.get(), bitangent_array.get());
+
+            tangents = VertexBuffer::createTangents(SharedArray<float>::create(tangent_array, 3 * num_vertices));
+            bitangents = VertexBuffer::createBitangents(SharedArray<float>::create(bitangent_array, 3 * num_vertices));
+            buffersChanged = true;
+        }
 
         if (buffersChanged) {
             // Update the geometry on the render item.
@@ -2590,11 +2648,15 @@ public:
                 positions,
                 normals,
                 uvs,
+                tangents,
+                bitangents,
                 boundingBox,
                 fIndices,
                 fPositions,
                 fNormals,
-                fUVs
+                fUVs,
+                fTangents,
+                fBitangents
             );
 
             // Cache the buffers.
@@ -2602,6 +2664,8 @@ public:
             fPositions      =   positions;
             fNormals        =   normals;
             fUVs            =   uvs;
+            fTangents       =   tangents;
+            fBitangents     =   bitangents;
             fBoundingBox    =   boundingBox;
 
             // World matrix changed. We need to recompute shadow map.
@@ -2825,11 +2889,15 @@ public:
             fPositions,
             fNormals,
             fUVs,
+            fTangents,
+            fBitangents,
             fBoundingBox,
             fIndices,
             fPositions,
             fNormals,
-            fUVs
+            fUVs,
+            fTangents,
+            fBitangents
         );
     }
 
@@ -2844,6 +2912,8 @@ public:
     const boost::shared_ptr<const VertexBuffer>& positions() const  { return fPositions; }
     const boost::shared_ptr<const VertexBuffer>& normals() const    { return fNormals; }
     const boost::shared_ptr<const VertexBuffer>& uvs() const        { return fUVs; }
+    const boost::shared_ptr<const VertexBuffer>& tangents() const   { return fTangents; }
+    const boost::shared_ptr<const VertexBuffer>& bitangents() const { return fBitangents; }
     const MBoundingBox& boundingBox() const { return fBoundingBox; }
 
     bool                enabled() const                 { return fEnabled; }
@@ -2906,6 +2976,8 @@ private:
     boost::shared_ptr<const VertexBuffer>   fPositions;
     boost::shared_ptr<const VertexBuffer>   fNormals;
     boost::shared_ptr<const VertexBuffer>   fUVs;
+    boost::shared_ptr<const VertexBuffer>   fTangents;
+    boost::shared_ptr<const VertexBuffer>   fBitangents;
     MBoundingBox                            fBoundingBox;
 
     bool                                    fEnabled;
@@ -4443,13 +4515,15 @@ public:
             assert(fTexturedItems[groupId]);
             if (!fTexturedItems[groupId]) continue;
 
+            // FIXME: only compute tangent basis if the shader needs it.
             fTexturedItems[groupId]->setBuffers(
                 subSceneOverride,
                 sample->triangleVertIndices(groupId),
                 sample->positions(),
                 sample->normals(),
                 sample->uvs(),
-                sample->boundingBox()
+                sample->boundingBox(),
+                /* compute_tangent_basis = */ true
             );
         }
     }
