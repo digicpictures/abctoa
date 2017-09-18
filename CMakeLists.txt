@@ -4,15 +4,13 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/share)
 
 project(abcToA)
 
+include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+conan_basic_setup()
+
 set(ABCTOA_MAJOR_VERSION 2)
 set(ABCTOA_MINOR_VERSION 2)
 set(ABCTOA_PATCH_VERSION 1)
 set(ABCTOA_VERSION "${ABCTOA_MAJOR_VERSION}.${ABCTOA_MINOR_VERSION}.${ABCTOA_PATCH_VERSION}")
-
-IF(NOT MTOA_VERSION AND NOT $ENV{MTOA_VERSION} STREQUAL "")
-  SET(MTOA_VERSION $ENV{MTOA_VERSION})
-ENDIF()
-
 
 set(CMAKE_BUILD_TYPE RELEASE)
 set(CMAKE_VERBOSE_MAKEFILE FALSE)
@@ -45,11 +43,11 @@ IF ("${CMAKE_SYSTEM_NAME}" MATCHES "Linux")
     SET(LINUX TRUE)
 ENDIF()
 
-OPTION(USE_HDF5 "Include HDF5 stuff" OFF)
-OPTION(USE_STATIC_BOOST "Build with static Boost libs" ON)
+OPTION(USE_HDF5 "Include HDF5 stuff" ON)
+OPTION(USE_STATIC_BOOST "Build with static Boost libs" OFF)
 OPTION(USE_ILMBASE_STATIC_LIBS "Build with static ilmBase libs" ON)
-OPTION(USE_STATIC_HDF5 "Build with static HDF5 libs" OFF)
-OPTION(ALEMBIC_SHARED_LIBS "Build shared libraries" ON)
+OPTION(USE_STATIC_HDF5 "Build with static HDF5 libs" ON)
+OPTION(ALEMBIC_SHARED_LIBS "Build shared libraries" OFF)
 
 IF (LINUX OR DARWIN)
 	INCLUDE(CheckCXXCompilerFlag)
@@ -111,46 +109,6 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/local.cmake)
     include(${CMAKE_SOURCE_DIR}/local.cmake)
 endif()
 
-# Find Arnold SDK
-find_package(Arnold REQUIRED)
-
-find_package(Mtoa REQUIRED)
-
-# Find maya
-find_package(Maya REQUIRED)
-
-# Find Boost
-SET(Boost_USE_STATIC_LIBS ${USE_STATIC_BOOST})
-find_package(Boost REQUIRED COMPONENTS regex system program_options filesystem)
-
-# Find ILMBASE
-find_package(IlmBase REQUIRED)
-
-if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-	if(NOT USE_ILMBASE_STATIC_LIBS)
-		add_definitions( "-DOPENEXR_DLL -DHALF_EXPORTS")
-	endif()
-endif()
-
-
-# Find alembic
-find_package(Alembic REQUIRED)
-
-# Find HDF5
-if(USE_HDF5)
-	find_package(AlembicHDF5 REQUIRED)
-	find_package(AlembicZlib REQUIRED)
-	find_package(SZIP)
-endif()
-
-
-
-# Find JSONCPP
-find_package(JsonCPP REQUIRED)
-
-# Find Pystring
-find_package(PyString REQUIRED)
-
 
 configure_file(
     "${PROJECT_SOURCE_DIR}/exportArnoldDefinitions.in.py"
@@ -181,7 +139,6 @@ set(PYSIDE_INSTALL_DIR ${INSTALL_DIR}/pyside)
 message("DSO binaries will be installed to:\n\t${DSO_INSTALL_DIR}")
 message("Shaders will be installed to: \n\t${SHADERS_INSTALL_DIR}")
 message("Maya Plug-ins will be installed to: \n\t${PLUGINS_INSTALL_DIR}")
-message("MtoA Translators will be installed to: \n\t${TRANSLATOR_INSTALL_DIR}")
 message("Icons will be installed to: \n\t${INSTALL_DIR}/icons")
 message("Scripts will be installed to: \n\t${INSTALL_DIR}/scripts")
 message("PySide will be installed to: \n\t${PYSIDE_INSTALL_DIR}")
@@ -193,10 +150,7 @@ set(SUBDIRECTORIES
 		arnold/shaders/abcShader
 		arnold/utility/assShadersToAbc
 		maya/alembicHolder
-		mtoa/ABCViewer
-		mtoa/abcShader
 )
-
 
 include_directories(common)
 
@@ -204,11 +158,6 @@ include_directories(common)
 foreach(SUBDIR ${SUBDIRECTORIES})
     add_subdirectory(${SUBDIR})
 endforeach()
-
-# abcMayaShader won't compile on darwin for the moment.
-IF(NOT DARWIN)
-	add_subdirectory(maya/abcMayaShader)
-ENDIF()
 
 # add top-level files
 INSTALL(FILES README INSTALL DESTINATION ${INSTALL_DIR})
@@ -220,11 +169,6 @@ INSTALL(DIRECTORY maya/samples DESTINATION ${INSTALL_DIR})
 
 
 # configure other files with version numbers etc.
-
-configure_file (
-  "${CMAKE_SOURCE_DIR}/maya/alembicHolder/version.h.in"
-  "${CMAKE_SOURCE_DIR}/maya/alembicHolder/version.h"
-  )
 
 configure_file (
 "${CMAKE_SOURCE_DIR}/abcToA.mod.in"
