@@ -24,6 +24,8 @@ License along with this library.*/
 #include "gpuCacheGLPickingSelect.h"
 #include "gpuCacheRasterSelect.h"
 
+#include <dViewportHelpers.h>
+
 #include <maya/MPlug.h>
 #include <maya/MPlugArray.h>
 #include <maya/MDataBlock.h>
@@ -1515,7 +1517,7 @@ public:
                 gGLFT->glGenTextures(1, &textureID);
                 gGLFT->glBindTexture(MGL_TEXTURE_2D, textureID);
                 MImage image;
-                MStatus stat = image.readFromFile(sample->getTexturePath());
+                MStatus stat = image.readFromFile(dViewportHelpers::remapTexture(sample->getTexturePath()));
                 unsigned int res = state().textRes();
                 unsigned int width, height;
                 image.getSize(width, height);

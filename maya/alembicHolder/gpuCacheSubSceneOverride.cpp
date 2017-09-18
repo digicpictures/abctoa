@@ -2174,7 +2174,8 @@ public:
         if (!textureManager) {
             return {};
         }
-        MHWRender::MTexture* texture = textureManager->acquireTexture(fileTexturePath);
+        MHWRender::MTexture* texture = textureManager->acquireTexture(
+            dViewportHelpers::remapTexture(fileTexturePath));
         MHWRender::MTextureAssignment textureAssignment;
         textureAssignment.texture = texture;
         shader.get()->setParameter("map", textureAssignment);
